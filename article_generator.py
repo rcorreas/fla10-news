@@ -126,3 +126,151 @@ def create_fallback_article(news_item):
 
 *Artigo gerado automaticamente pelo Fla10 News*
 """
+
+def fetch_url_content(url):
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            from html.parser import HTMLParser
+            class TextExtractor(HTMLParser):
+                def __init__(self):
+                    super().__init__()
+                    self.text = []
+                    self.skip = False
+                def handle_starttag(self, tag, attrs):
+                    if tag in ['script', 'style', 'nav', 'header', 'footer']:
+                        self.skip = True
+                def handle_endtag(self, tag):
+                    if tag in ['script', 'style', 'nav', 'header', 'footer']:
+                        self.skip = False
+                def handle_data(self, data):
+                    if not self.skip:
+                        text = data.strip()
+                        if text:
+                            self.text.append(text)
+            extractor = TextExtractor()
+            extractor.feed(response.text)
+            content = ' '.join(extractor.text[:100])
+            return content[:3000] if content else f"Conteúdo não extraído de: {url}"
+        return f"Erro ao acessar: {url}"
+    except Exception as e:
+        return f"Erro ao acessar {url}: {str(e)[:100]}"
+
+def generate_article_from_sources(fontes, info_adicionais=None, titulo_personalizado=None, model=DEFAULT_MODEL):
+    diretrizes = load_file(DIRETRIZES_PATH)
+    exemplos = load_file(EXEMPLOS_PATH)
+
+    conteudo_fontes = []
+    for i, url in enumerate(fontes, 1):
+        conteudo = fetch_url_content(url)
+        conteudo_fontes.append(f"--- FONTE {i}: {url} ---\n{conteudo}")
+
+    fontes_conteudo = "\n\n".join(conteudo_fontes)
+
+    info_section = ""
+    if info_adicionais:
+        info_section = f"""
+## ⚠️ INSTRUÇÕES OBRIGATÓRIAS DO USUÁRIO (SEJA RIGOROSO EM SEGUIR):
+O usuário forneceu as seguintes instruções que DEVEM ser seguidas EXATAMENTE na matéria:
+---
+{info_adicionais}
+---
+ESSAS INSTRUÇÕES SÃO PRIORIDADE MÁXIMA. A matéria DEVE seguir essas diretrizes em TODAS as seções.
+Analise cada instrução e aplique na estrutura, foco, tom e conteúdo da matéria."""
+
+    titulo_section = ""
+    if titulo_personalizado:
+        titulo_section = f"""
+## TÍTULO SOLICITADO PELO USUÁRIO:
+Use EXATAMENTE este título: {titulo_personalizado}"""
+
+    system_prompt = f"""Você é um jornalista esportivo profissional especializado no Flamengo,redator oficial do portal Fla10 News.
+
+## DIRETRIZES EDITORIAIS OBRIGATÓRIAS:
+{diretrizes}
+
+## EXEMPLOS REAIS DO ESTILO FLA10 NEWS (use como referência de escrita):
+{exemplos}
+
+## REGRAS CRÍTICAS DE ESCRITA:
+1. Parágrafos curtos (2-4 frases no máximo)
+2. Subtítulos em negrito para dividir blocos
+3. Linguagem jornalística moderna, direta e fluida
+4. Contextualização antes de entrar no mérito
+5. Análise tática quando aplicável
+6. Uso de dados e estatísticas quando disponíveis
+7. Referências históricas para enriquecer
+8. Identidade rubro-negra presente (Rubro-Negro, Mengão, Mais Querido, Gávea)
+9. NUNCA encerrar com perguntas ao leitor
+10. Conclusão com interpretação e projeção
+{info_section}
+Escreva em português brasileiro. Mínimo de 2000 palavras com conteúdo denso, detalhado e bem fundamentado."""
+
+    user_prompt = f"""Escreva uma matéria COMPLETA e DETALHADA para o Fla10 News.
+
+IMPORTANTE: O artigo deve ter NO MÍNIMO 2000 palavras. Seja extremamente detalhado.
+
+## CONTEÚDO EXTRAÍDO DAS FONTES:
+{fontes_conteudo}
+{titulo_section}
+
+## ⚠️ INSTRUÇÕES DO USUÁRIO QUE DEVEM SER SEGUIDAS RIGOROSAMENTE:
+Se houver informações adicionais fornecidas acima (no system prompt), você DEVE segui-las em TODA a matéria.
+Cada instrução do usuário deve ser aplicada na estrutura, foco e conteúdo do artigo.
+
+ESTRUTURA OBRIGATÓRIA (desenvolva CADA seção com MUITO detalhe):
+1. Título H1 forte e pesquisável (use o título personalizado se fornecido)
+2. Subtítulo contextualizado (em itálico abaixo do título)
+3. Introdução objetiva (quem, o quê, quando, onde) - mínimo 200 palavras
+4. Desenvolvimento em blocos com subtítulos H2/H3 (negrito) - mínimo 1200 palavras total:
+   - Resumo dos fatos principais
+   - Análise detalhada (conforme instruções do usuário)
+   - Contexto e histórico
+   - Impacto e consequências
+   - Perspectivas
+5. Conclusão editorial extensa (interpretação, projeção, leitura crítica) - mínimo 300 palavras
+
+Use TODAS as informações das fontes para criar uma matéria rica e detalhada.
+SIGA RIGOROSAMENTE as instruções adicionais do usuário em TODAS as seções.
+
+FORMATO: Markdown
+ESTILO: Idêntico aos exemplos reais do Fla10 News fornecidos"""
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {NVIDIA_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "top_p": 0.9
+        }
+
+        response = requests.post(
+            NVIDIA_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            article = result["choices"][0]["message"]["content"]
+            return article.strip()
+
+        print(f"Erro API Nvidia: {response.status_code} - {response.text}")
+        return f"Erro ao gerar matéria. Tente novamente."
+
+    except Exception as e:
+        print(f"Erro na geração IA: {e}")
+        return f"Erro ao gerar matéria: {str(e)}"

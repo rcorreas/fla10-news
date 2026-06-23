@@ -3,7 +3,7 @@ import os
 import glob
 from datetime import datetime
 from news_fetcher import get_flamengo_news
-from article_generator import generate_article_from_news
+from article_generator import generate_article_from_news, generate_article_from_sources
 from config import ARTICLES_DIR
 
 st.set_page_config(
@@ -16,12 +16,12 @@ os.makedirs(ARTICLES_DIR, exist_ok=True)
 
 pagina = st.sidebar.radio(
     "Navegação",
-    ["📝 Gerar Artigos", "📚 Artigos Salvos"]
+    ["📝 Gerar de Notícias", "🔗 Gerar de Fontes", "📚 Artigos Salvos"]
 )
 
-if pagina == "📝 Gerar Artigos":
-    st.title("⚽ Fla10 News - Gerar Artigos")
-    st.markdown("Selecione as notícias, adicione fontes e gere artigos com IA")
+if pagina == "📝 Gerar de Notícias":
+    st.title("⚽ Fla10 News - Gerar de Notícias")
+    st.markdown("Selecione notícias do RSS e gere artigos com IA")
 
     with st.sidebar:
         st.header("Controles")
@@ -45,38 +45,17 @@ if pagina == "📝 Gerar Artigos":
             marcadas = sum(st.session_state['selected'])
             st.info(f"Marcadas: {marcadas}/{len(st.session_state['selected'])}")
 
-        st.markdown("---")
-        st.header("📰 Fontes Adicionais")
-        st.markdown("Insira links para enriquecer a matéria:")
-
-        fontes = []
-        for i in range(6):
-            url = st.text_input(
-                f"Fonte {i+1}",
-                key=f"fonte_{i}",
-                placeholder="https://exemplo.com/artigo...",
-                label_visibility="collapsed"
-            )
-            if url:
-                fontes.append(url)
-
-        if fontes:
-            st.success(f"{len(fontes)} fonte(s) adicionada(s)")
-
-        st.markdown("---")
-
         if st.button("📝 Gerar Artigos das Marcadas"):
             if 'news' in st.session_state and any(st.session_state['selected']):
                 with st.spinner("Gerando artigos com IA..."):
                     articles = []
                     for i, news_item in enumerate(st.session_state['news']):
                         if st.session_state['selected'][i]:
-                            article = generate_article_from_news(news_item, fontes=fontes)
+                            article = generate_article_from_news(news_item)
                             articles.append({
                                 'title': news_item['title'],
                                 'content': article,
-                                'generated_at': datetime.now().isoformat(),
-                                'fontes': fontes
+                                'generated_at': datetime.now().isoformat()
                             })
                     st.session_state['articles'] = articles
                     st.success(f"Gerados {len(articles)} artigos")
@@ -111,16 +90,113 @@ if pagina == "📝 Gerar Artigos":
             for i, article in enumerate(st.session_state['articles']):
                 with st.expander(f"Artigo {i+1}: {article['title'][:40]}..."):
                     st.markdown(article['content'])
+                    if st.button(f"Salvar Artigo {i+1}", key=f"save_not_{i}"):
+                        filename = f"artigo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                        filepath = os.path.join(ARTICLES_DIR, filename)
+                        with open(filepath, 'w', encoding='utf-8') as f:
+                            f.write(f"# {article['title']}\n\n")
+                            f.write(f"**Gerado em:** {article['generated_at']}\n\n")
+                            f.write(article['content'])
+                        st.success(f"Artigo salvo: {filepath}")
+        else:
+            st.info("Gere artigos selecionando notícias")
+
+elif pagina == "🔗 Gerar de Fontes":
+    st.title("🔗 Fla10 News - Gerar de Fontes")
+    st.markdown("Crie matérias a partir de links de fontes na web")
+
+    with st.sidebar:
+        st.header("Fontes")
+        st.markdown("Insira os links das notícias para base da matéria:")
+
+        fontes = []
+        for i in range(6):
+            url = st.text_input(
+                f"Fonte {i+1}",
+                key=f"fonte_url_{i}",
+                placeholder="https://exemplo.com/noticia...",
+                label_visibility="collapsed"
+            )
+            if url:
+                fontes.append(url)
+
+        if fontes:
+            st.success(f"{len(fontes)} fonte(s) adicionada(s)")
+
+        st.markdown("---")
+        st.header("📌 Informações Adicionais")
+        info_adicionais = st.text_area(
+            "Detalhes extras para a matéria:",
+            key="info_adicionais",
+            placeholder="Ex: Foco na análise tática, incluir declarações do treinador, comparar com temporada anterior...",
+            height=150
+        )
+
+        st.markdown("---")
+
+        titulo_personalizado = st.text_input(
+            "Título personalizado (opcional)",
+            key="titulo_custom",
+            placeholder="Deixe vazio para a IA gerar automaticamente"
+        )
+
+        st.markdown("---")
+
+        if st.button("📝 Gerar Matéria das Fontes"):
+            if fontes:
+                with st.spinner("Buscando conteúdo das fontes e gerando matéria..."):
+                    article = generate_article_from_sources(
+                        fontes=fontes,
+                        info_adicionais=info_adicionais,
+                        titulo_personalizado=titulo_personalizado
+                    )
+                    if 'articles_fontes' not in st.session_state:
+                        st.session_state['articles_fontes'] = []
+                    st.session_state['articles_fontes'].append({
+                        'title': titulo_personalizado or "Matéria gerada de fontes",
+                        'content': article,
+                        'generated_at': datetime.now().isoformat(),
+                        'fontes': fontes,
+                        'info_adicionais': info_adicionais
+                    })
+                    st.success("Matéria gerada com sucesso!")
+            else:
+                st.warning("Adicione pelo menos uma fonte")
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.header("🔗 Fontes Adicionadas")
+        if fontes:
+            for i, f_url in enumerate(fontes, 1):
+                st.markdown(f"**{i}.** {f_url}")
+        else:
+            st.info("Adicione links de fontes na sidebar")
+
+        if info_adicionais:
+            st.markdown("---")
+            st.header("📌 Informações Adicionais")
+            st.markdown(info_adicionais)
+
+    with col2:
+        st.header("📝 Matérias Geradas")
+        if 'articles_fontes' in st.session_state and st.session_state['articles_fontes']:
+            for i, article in enumerate(st.session_state['articles_fontes']):
+                with st.expander(f"Matéria {i+1}: {article['title'][:40]}...", expanded=True):
+                    st.markdown(article['content'])
 
                     if article.get('fontes'):
                         st.markdown("**Fontes utilizadas:**")
                         for f_url in article['fontes']:
                             st.markdown(f"- {f_url}")
 
-                    if st.button(f"Salvar Artigo {i+1}", key=f"save_{i}"):
-                        filename = f"artigo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-                        filepath = os.path.join(ARTICLES_DIR, filename)
+                    if article.get('info_adicionais'):
+                        st.markdown("**Informações adicionais:**")
+                        st.markdown(article['info_adicionais'])
 
+                    if st.button(f"Salvar Matéria {i+1}", key=f"save_fonte_{i}"):
+                        filename = f"materia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                        filepath = os.path.join(ARTICLES_DIR, filename)
                         with open(filepath, 'w', encoding='utf-8') as f:
                             f.write(f"# {article['title']}\n\n")
                             f.write(f"**Gerado em:** {article['generated_at']}\n\n")
@@ -129,11 +205,12 @@ if pagina == "📝 Gerar Artigos":
                                 for f_url in article['fontes']:
                                     f.write(f"- {f_url}\n")
                                 f.write("\n")
+                            if article.get('info_adicionais'):
+                                f.write(f"**Informações adicionais:**\n{article['info_adicionais']}\n\n")
                             f.write(article['content'])
-
-                        st.success(f"Artigo salvo em: {filepath}")
+                        st.success(f"Matéria salva: {filepath}")
         else:
-            st.info("Gere artigos selecionando notícias e clicando em 'Gerar Artigos das Marcadas'")
+            st.info("Gere matérias adicionando fontes e clicando em 'Gerar Matéria das Fontes'")
 
 elif pagina == "📚 Artigos Salvos":
     st.title("📚 Artigos Salvos")
@@ -172,7 +249,7 @@ elif pagina == "📚 Artigos Salvos":
                         key=f"dl_{filename}"
                     )
     else:
-        st.info("Nenhum artigo salvo ainda. Gere artigos na página 'Gerar Artigos'.")
+        st.info("Nenhum artigo salvo ainda. Gere artigos nas páginas anteriores.")
 
 st.markdown("---")
 st.markdown("Desenvolvido com ❤️ para o Mengão")
