@@ -1,13 +1,7 @@
 
-import os
-import glob
-from datetime import datetime
-from news_fetcher import get_flamengo_news
-from article_generator import generate_article_from_news, generate_article_from_sources
-from config import ARTICLES_DIR
 
 st.set_page_config(
-    page_title="Fla10 News - Redação Automatizada",
+    page_title="Fla10 News",
     page_icon="⚽",
     layout="wide"
 )
